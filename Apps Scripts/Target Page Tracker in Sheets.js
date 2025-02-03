@@ -1,54 +1,59 @@
-// Target Page Tracker in Google Sheets
-// Your Google Sheet should have the following columns in this order: Client Name, URL,	Title (Current), Title (Previous),	Meta Description (Current),	Meta Description (Previous),	H1 (Current), H1 (Previous)	Status Code (Current), Status Code (Previous)
-// The names are not required - however it should be noted that the sheet will extract the URL from column B (2), and will input/move the data based on the above columns.
-
 function updatePageData() {
-  var sheetName = "Sheet1"; // Target sheet name - should be edited based on your the name of your sheet/tab.
+  var sheetName = "AutomatedReportTest";
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
-
   if (!sheet) {
     Logger.log("Error: Sheet '" + sheetName + "' not found.");
     return;
   }
 
   var data = sheet.getDataRange().getValues();
-  var changes = [];
+  var changesByClient = {};
 
   for (var i = 1; i < data.length; i++) {
-    var url = data[i][1]; // URL is now in Column B (Index 1 instead of 0)
-    if (!url) continue; // Skip empty rows
+    var client = data[i][0]; // Client Name (Column A)
+    var url = data[i][1]; // URL (Column B)
+    if (!url) continue;
 
-    // Fetch On-Page SEO Data (Title, Meta, H1)
     var seoData = fetchSEODataWithRegex(url);
-    
-    // Fetch Status Code using the robust function
     var statusCode = getStatusCode(url);
-
     if (!seoData) continue;
 
-    // Move previous data to history columns
     data[i][3] = data[i][2]; // Previous Page Title
     data[i][5] = data[i][4]; // Previous Meta Description
     data[i][7] = data[i][6]; // Previous H1
     data[i][9] = data[i][8]; // Previous Status Code
 
-    // Update current data (with decoded HTML entities)
     data[i][2] = decodeHtmlEntities(seoData.title);
     data[i][4] = decodeHtmlEntities(seoData.metaDescription);
     data[i][6] = decodeHtmlEntities(seoData.h1);
     data[i][8] = statusCode;
 
-    // Check for changes
-    if (data[i][2] !== data[i][3]) changes.push(`Page Title changed for ${url}`);
-    if (data[i][4] !== data[i][5]) changes.push(`Meta Description changed for ${url}`);
-    if (data[i][6] !== data[i][7]) changes.push(`H1 Tag changed for ${url}`);
-    if (data[i][8] !== data[i][9]) changes.push(`Status Code changed for ${url} (${data[i][9]} → ${data[i][8]})`);
+    var clientChanges = [];
+
+    if (data[i][2] !== data[i][3]) {
+      clientChanges.push(`<b>Title changed for</b> <a href='${url}'>${url}</a><br><b style='color:#0C232A;'>Old:</b> <s>"${data[i][3]}"</s> → <b style='color:#C9A82D;'>New:</b> "${data[i][2]}"`);
+    }
+    if (data[i][4] !== data[i][5]) {
+      clientChanges.push(`<b>Meta Description changed for</b> <a href='${url}'>${url}</a><br><b style='color:#0C232A;'>Old:</b> <s>"${data[i][5]}"</s> → <b style='color:#C9A82D;'>New:</b> "${data[i][4]}"`);
+    }
+    if (data[i][6] !== data[i][7]) {
+      clientChanges.push(`<b>H1 Tag changed for</b> <a href='${url}'>${url}</a><br><b style='color:#0C232A;'>Old:</b> <s>"${data[i][7]}"</s> → <b style='color:#C9A82D;'>New:</b> "${data[i][6]}"`);
+    }
+    if (String(data[i][8]) !== String(data[i][9])) {
+      clientChanges.push(`<b>Status Code changed for</b> <a href='${url}'>${url}</a> (<b style='color:#0C232A;'>Old:</b> ${data[i][9]} → <b style='color:#C9A82D;'>New:</b> ${data[i][8]})`);
+    }
+
+    if (clientChanges.length > 0) {
+      if (!changesByClient[client]) {
+        changesByClient[client] = [];
+      }
+      changesByClient[client].push(...clientChanges);
+    }
   }
 
   sheet.getDataRange().setValues(data);
-
-  if (changes.length > 0) {
-    sendEmailReport(changes);
+  if (Object.keys(changesByClient).length > 0) {
+    sendEmailReport(changesByClient);
   }
 }
 
@@ -112,14 +117,6 @@ function decodeHtmlEntities(str) {
   return str.replace(/&[#0-9a-zA-Z]+;/g, function (entity) {
     return entityMap[entity] || entity; // Replace if found, otherwise keep original
   });
-}
-
-function sendEmailReport(changes) {
-  var recipient = "email1@email.com, email2@email.com";
-  var subject = "**Changes to Target Pages Found**";
-  var body = "This is an automated report. The following changes were detected:\n\n" + changes.join("\n");
-
-  MailApp.sendEmail(recipient, subject, body);
 }
 
 function getStatusCode(url) {
@@ -202,4 +199,54 @@ function getStatusCode(url) {
     // Handle cache-related errors
     return 'Error: Cache issue - ' + error.message;
   }
+}
+
+function sendEmailReport(changesByClient) {
+  var recipient = "example@email.com, example2@email.com"; // **** INSERT YOUR EMAIL(s) HERE
+  var subject = "!!Changes to Target Pages Found!!";
+  
+  var htmlBody = `<p>The following page changes were detected:</p>`;
+  
+  for (var client in changesByClient) {
+    htmlBody += `<h2>${client}</h2><ul>`;
+    changesByClient[client].forEach(change => {
+      htmlBody += `<li>${change}</li>`;
+    });
+    htmlBody += `</ul>`;
+  }
+// **** ADD YOUR GOOGLE SHEETS URL BELOW
+  htmlBody += `<br>
+  <i>This is an automated email report sent to you via the Google Apps Script trigger found in the following report:</i>
+  <p><a href='INSERT_YOUR_GOOGLE_SHEETS_URL_HERE'
+       style='background-color: #C9A82D; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;'>
+       Target Page Tracker
+    </a></p>
+  <br><br>
+  <div style="border: 2px solid #C9A82D; background-color: #0C232A; padding: 15px; border-radius: 10px; width: 30%; margin-left: 0; text-align: left;">
+    <div style="width: 100%; display: flex; align-items: center;">
+      <span style="color: white; font-size: 16px; margin-right: 10px;">
+        Built by
+      </span>
+      <a href="https://www.carricoseo.com/?utm_source=google_apps_script&utm_medium=referral&utm_campaign=bannerad" target="_blank" style="text-decoration: none;">
+        <img src="https://www.carricoseo.com/wp-content/uploads/2025/02/CarricoSEO-Logo-White.png" alt="CarricoSEO Logo" style="height: 25px; vertical-align: middle;">
+      </a>
+    </div>
+    <br>
+    <div style="margin-top: 10px; text-align: left; color: white; font-size: 14px;">
+      This and many other one-click tools can be found at
+      <a href="https://tools.carricoseo.com/?utm_source=google_apps_script&utm_medium=referral&utm_campaign=bannerad" target="_blank" style="color: lightblue; text-decoration: none;">
+        CS Tools.
+      </a>
+      I also have a blog full of other free resources, tools, and scripts
+      <a href="https://www.carricoseo.com/resources/?utm_source=google_colab&utm_medium=referral&utm_campaign=colab_blog" target="_blank" style="color: lightblue; text-decoration: none;">
+        found here!
+      </a>
+    </div>
+  </div>`;
+
+  MailApp.sendEmail({
+    to: recipient,
+    subject: subject,
+    htmlBody: htmlBody
+  });
 }
